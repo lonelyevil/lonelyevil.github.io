@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang=zh>
+<head>
+    <!-- so meta -->
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="HandheldFriendly" content="True">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta name="description" content="本文原作者为 Jérôme Petazzoni，发布于Ardanlabs Blog。如有错误或建议欢迎指出，谢谢。  简介刚上手容器的时候，很容易就会被构建的镜像大小所吓到。在不妨碍到开发和运维的前提下，本系列将回顾一系列降低镜像大小的技术。 在第一部分，首先会讨论多阶段构建，因为这是任何想降低镜像大小的人应当开始的地方。然后会解释静态和动态链接的区别和了解其中区别的原因。最后引出 Alpine">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Docker镜像：第一部分 降低镜像大小">
+<meta property="og:url" content="http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/index.html">
+<meta property="og:site_name" content="&#x2F;bin&#x2F;cat">
+<meta property="og:description" content="本文原作者为 Jérôme Petazzoni，发布于Ardanlabs Blog。如有错误或建议欢迎指出，谢谢。  简介刚上手容器的时候，很容易就会被构建的镜像大小所吓到。在不妨碍到开发和运维的前提下，本系列将回顾一系列降低镜像大小的技术。 在第一部分，首先会讨论多阶段构建，因为这是任何想降低镜像大小的人应当开始的地方。然后会解释静态和动态链接的区别和了解其中区别的原因。最后引出 Alpine">
+<meta property="og:locale" content="zh_CN">
+<meta property="article:published_time" content="2020-02-19T14:13:49.000Z">
+<meta property="article:modified_time" content="2020-02-19T14:13:58.540Z">
+<meta property="article:author" content="Rin">
+<meta property="article:tag" content="docker">
+<meta name="twitter:card" content="summary">
+    
+    
+        
+          
+              <link rel="shortcut icon" href="https://www.gravatar.com/avatar/51a8047c2d25079f7fdbce05da49f5e3?s=16">
+          
+        
+        
+          
+            <link rel="icon" type="image/png" href="https://www.gravatar.com/avatar/51a8047c2d25079f7fdbce05da49f5e3?s=192" sizes="192x192">
+          
+        
+        
+          
+            <link rel="apple-touch-icon" sizes="180x180" href="https://www.gravatar.com/avatar/51a8047c2d25079f7fdbce05da49f5e3?s=180">
+          
+        
+    
+    <!-- title -->
+    <title>Docker镜像：第一部分 降低镜像大小</title>
+    <!-- styles -->
+    
+<link rel="stylesheet" href="/css/style.css">
+
+    <!-- persian styles -->
+    
+      
+<link rel="stylesheet" href="/css/rtl.css">
+
+    
+    <!-- rss -->
+    
+    
+      <link rel="alternate" href="/atom.xml" title="/bin/cat" type="application/atom+xml" />
+    
+<meta name="generator" content="Hexo 4.2.0"></head>
+
+<body class="max-width mx-auto px3 ltr">
+    
+      <div id="header-post">
+  <a id="menu-icon" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="menu-icon-tablet" href="#"><i class="fas fa-bars fa-lg"></i></a>
+  <a id="top-icon-tablet" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');" style="display:none;"><i class="fas fa-chevron-up fa-lg"></i></a>
+  <span id="menu">
+    <span id="nav">
+      <ul>
+         
+          <li><a href="/">首页</a></li>
+         
+          <li><a href="/about/">关于</a></li>
+         
+          <li><a href="/archives/">归档</a></li>
+         
+          <li><a href="https://github.com/lonelyevil" target="_blank" rel="noopener">项目</a></li>
+        
+      </ul>
+    </span>
+    <br/>
+    <span id="actions">
+      <ul>
+        
+        
+        <li><a class="icon" href="/2020/01/10/test/"><i class="fas fa-chevron-right" aria-hidden="true" onmouseover="$('#i-next').toggle();" onmouseout="$('#i-next').toggle();"></i></a></li>
+        
+        <li><a class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up" aria-hidden="true" onmouseover="$('#i-top').toggle();" onmouseout="$('#i-top').toggle();"></i></a></li>
+        <li><a class="icon" href="#"><i class="fas fa-share-alt" aria-hidden="true" onmouseover="$('#i-share').toggle();" onmouseout="$('#i-share').toggle();" onclick="$('#share').toggle();return false;"></i></a></li>
+      </ul>
+      <span id="i-prev" class="info" style="display:none;">上一篇</span>
+      <span id="i-next" class="info" style="display:none;">下一篇</span>
+      <span id="i-top" class="info" style="display:none;">返回顶部</span>
+      <span id="i-share" class="info" style="display:none;">分享文章</span>
+    </span>
+    <br/>
+    <div id="share" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/" target="_blank" rel="noopener"><i class="fab fa-facebook " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&text=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-twitter " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-linkedin " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&is_video=false&description=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-pinterest " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=Docker镜像：第一部分 降低镜像大小&body=Check out this article: http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/"><i class="fas fa-envelope " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-get-pocket " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-reddit " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-stumbleupon " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-digg " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&name=Docker镜像：第一部分 降低镜像大小&description=" target="_blank" rel="noopener"><i class="fab fa-tumblr " aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://news.ycombinator.com/submitlink?u=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&t=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-hacker-news " aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+    <div id="toc">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#要解决的问题"><span class="toc-number">2.</span> <span class="toc-text">要解决的问题</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#多阶段构建"><span class="toc-number">3.</span> <span class="toc-text">多阶段构建</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#警告：使用经典镜像"><span class="toc-number">3.1.</span> <span class="toc-text">警告：使用经典镜像</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#警告：COPY-FROM使用绝对路径"><span class="toc-number">3.2.</span> <span class="toc-text">警告：COPY --FROM使用绝对路径</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#使用FROM-scratch"><span class="toc-number">4.</span> <span class="toc-text">使用FROM scratch</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#没有-Shell"><span class="toc-number">4.1.</span> <span class="toc-text">没有 Shell</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#没有调试工具"><span class="toc-number">4.2.</span> <span class="toc-text">没有调试工具</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#没有libc"><span class="toc-number">4.3.</span> <span class="toc-text">没有libc</span></a><ol class="toc-child"><li class="toc-item toc-level-5"><a class="toc-link" href="#静态构建二进制文件"><span class="toc-number">4.3.0.1.</span> <span class="toc-text">静态构建二进制文件</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#在镜像中添加库文件"><span class="toc-number">4.3.0.2.</span> <span class="toc-text">在镜像中添加库文件</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#使用busybox-glibc"><span class="toc-number">4.3.0.3.</span> <span class="toc-text">使用busybox:glibc</span></a></li></ol></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#归纳和（部分的）结论"><span class="toc-number">5.</span> <span class="toc-text">归纳和（部分的）结论</span></a></li></ol>
+    </div>
+  </span>
+</div>
+
+    
+    <div class="content index py4">
+        
+        <article class="post" itemscope itemtype="http://schema.org/BlogPosting">
+  <header>
+    
+    <h1 class="posttitle" itemprop="name headline">
+        Docker镜像：第一部分 降低镜像大小
+    </h1>
+
+
+
+    <div class="meta">
+      <span class="author" itemprop="author" itemscope itemtype="http://schema.org/Person">
+        <span itemprop="name">/bin/cat</span>
+      </span>
+      
+    <div class="postdate">
+      
+        <time datetime="2020-02-19T14:13:49.000Z" itemprop="datePublished">2020-02-19</time>
+        
+      
+    </div>
+
+
+      
+    <div class="article-category">
+        <i class="fas fa-archive"></i>
+        <a class="category-link" href="/categories/%E7%BF%BB%E8%AF%91/">翻译</a>
+    </div>
+
+
+      
+    <div class="article-tag">
+        <i class="fas fa-tag"></i>
+        <a class="tag-link" href="/tags/docker/" rel="tag">docker</a>
+    </div>
+
+
+    </div>
+  </header>
+  
+
+  <div class="content" itemprop="articleBody">
+    <blockquote>
+<p>本文原作者为 Jérôme Petazzoni，发布于<a href="https://www.ardanlabs.com/blog/2020/02/docker-images-part1-reducing-image-size.html" target="_blank" rel="noopener">Ardanlabs Blog</a>。<br>如有错误或建议欢迎指出，谢谢。</p>
+</blockquote>
+<h2 id="简介"><a href="#简介" class="headerlink" title="简介"></a>简介</h2><p>刚上手容器的时候，很容易就会被构建的镜像大小所吓到。在不妨碍到开发和运维的前提下，本系列将回顾一系列降低镜像大小的技术。</p>
+<p>在第一部分，首先会讨论多阶段构建，因为这是任何想降低镜像大小的人应当开始的地方。然后会解释静态和动态链接的区别和了解其中区别的原因。最后引出 Alpine。</p>
+<p>在第二部分，会讨论各种流行语言的特性。不仅是 Go，还会包括 Java、Node、Python、Ruby 和 Rust。除此以外，还会讨论更多全面利用 Alpine 的方法。</p>
+<p>在第三部分，会涉猎像共用基础镜像、剥离二进制和减少资源大小等有关于多数语言和框架的模式和反模式。接着会使用上一些例如 Bazel、Distroless、DockerSlim 或者 UPX 的外来高级技术。其中一些技术在某些场景会变成反生产而在其他特定场景可能非常有用。</p>
+<p>代码样例和所有提到的<code>Dockerfile</code>都方便地提供于一个公开的 Github 仓库，并且有一个<code>Compose</code>文件来构建所有镜像并轻松地比较大小。</p>
+<h2 id="要解决的问题"><a href="#要解决的问题" class="headerlink" title="要解决的问题"></a>要解决的问题</h2><p>笔者猜所有人都对第一次编译构建出来的 Docker 镜像的大小感到吃惊。</p>
+<p>以下是一个普通的 C 语言<code>hello world</code>程序。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br></pre></td><td class="code"><pre><span class="line"><span class="comment">/* hello.c */</span></span><br><span class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span> <span class="params">()</span> </span>&#123;</span><br><span class="line">  <span class="built_in">puts</span>(<span class="string">"Hello, world!"</span>);</span><br><span class="line">  <span class="keyword">return</span> <span class="number">0</span>;</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>可以通过以下的<code>Dockerfile</code>文件来构建。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> gcc</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> hello.c .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> gcc -o hello hello.c</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">"./hello"</span>]</span></span><br></pre></td></tr></table></figure>
+
+<p>但是构建出来的镜像会大于 1GB，因为这个镜像包含了整个<code>gcc</code>镜像！</p>
+<p>如果用比如<code>Ubuntu</code>的镜像，安装 C 编译器，然后编译程序，最终会得到一个 300MB 的镜像。这看起来好点，不过对于实际只有 20KB 二进制文件来说还是太大了。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> ls -l hello</span></span><br><span class="line">-rwxr-xr-x   1 root root 16384 Nov 18 14:36 hello</span><br></pre></td></tr></table></figure>
+
+<p>对于以下的 Go 程序也是如此。</p>
+<figure class="highlight go"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">package</span> main</span><br><span class="line"></span><br><span class="line"><span class="keyword">import</span> <span class="string">"fmt"</span></span><br><span class="line"></span><br><span class="line"><span class="function"><span class="keyword">func</span> <span class="title">main</span> <span class="params">()</span></span> &#123;</span><br><span class="line">  fmt.Println(<span class="string">"Hello, world!"</span>)</span><br><span class="line">&#125;</span><br></pre></td></tr></table></figure>
+
+<p>用<code>golang</code>镜像构建，尽管<code>hello</code>程序仅仅只有 2MB，最后的镜像却是 800MB。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> ls -l hello</span></span><br><span class="line">-rwxr-xr-x 1 root root 2008801 Jan 15 16:41 hello</span><br></pre></td></tr></table></figure>
+
+<p>一定有个更好的办法。一起来看看如何显著地降低镜像的大小。在某些情况下，大小会降低 99.8%之多（但是降到最低并不总是最优）。</p>
+<blockquote>
+<p>小贴士：<br>为了轻松地比较镜像的大小，接下来将使用同样的镜像名和不同的标记。比如，接下来的镜像会是<code>hello:gcc</code>、<code>hello:ubuntu</code>和<code>hello:thisweirdtrick</code>等等。之后，执行<code>docker images hello</code>，就会只列出所有<code>hello</code>镜像和它们的大小，排除了 Docker 内已经有的其它无关镜像。</p>
+</blockquote>
+<h2 id="多阶段构建"><a href="#多阶段构建" class="headerlink" title="多阶段构建"></a>多阶段构建</h2><p>这是降低镜像大小的最初也是最明显的一步。因为如果错误地做，得到的镜像会更难使用或者甚至完全损坏，所以必须要小心。</p>
+<p>多阶段构建来自于一个简单的想法：</p>
+<blockquote>
+<p>不需要在最终的应用镜像里包含 C 或者 Go 编译器和整个构建工具链。只要交付二进制文件。</p>
+</blockquote>
+<p>在 Dockerfile 里再加一个<code>FROM</code>，可以得到一个多阶段构建的 Dockerfile。例子如下：</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> gcc AS mybuildstage</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> hello.c .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> gcc -o hello hello.c</span></span><br><span class="line"><span class="keyword">FROM</span> ubuntu</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=mybuildstage hello .</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">"./hello"</span>]</span></span><br></pre></td></tr></table></figure>
+
+<p>使用<code>gcc</code>镜像来构建<code>hello.c</code>程序。然后用<code>ubuntu</code>镜像开始一个新的阶段（称为<em>运行阶段</em>）。从上一个阶段复制了<code>hello</code>二进制文件。最终镜像的大小从 1.1GB 降到了 64MB，大小降低了 95%。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> docker images minimage</span></span><br><span class="line">REPOSITORY          TAG                    ...         SIZE</span><br><span class="line">minimage            hello-c.gcc            ...         1.14GB</span><br><span class="line">minimage            hello-c.gcc.ubuntu     ...         64.2MB</span><br></pre></td></tr></table></figure>
+
+<p>不错，是吧？在此基础上可以做得更好。但是首先有几个贴士和警告。</p>
+<p>在声明构建阶段时，没必要使用<code>AS</code>关键词。此时，从之前的阶段复制文件时，可以简单地用数字次序来指代构建阶段（从 0 开始）。换句话说，下面两句是一致的。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=mybuildstage hello .</span></span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=0 hello .</span></span><br></pre></td></tr></table></figure>
+
+<p>个人而言，在短如 10 行以内的 Dockerfile 里使用数字是可以的。但是随着 Dockerfile 大小和复杂度（例如多重构建阶段）的增加，显式地给阶段命名是一个好主意。这会帮助你的工作伙伴和将来审核你代码的人维护代码。</p>
+<h3 id="警告：使用经典镜像"><a href="#警告：使用经典镜像" class="headerlink" title="警告：使用经典镜像"></a>警告：使用经典镜像</h3><p>强烈建议给<em>运行阶段</em>使用经典镜像。经典是指一些像 CentOS、Debian、Fedora 和 Ubuntu 等熟悉的镜像。可能你已经听说了 Alpine 并且急切地想使用它。不要这样做！至少不是现在。之后会讨论 Alpine，然后会解释为什么要小心它。</p>
+<h3 id="警告：COPY-FROM使用绝对路径"><a href="#警告：COPY-FROM使用绝对路径" class="headerlink" title="警告：COPY --FROM使用绝对路径"></a>警告：<code>COPY --FROM</code>使用绝对路径</h3><p>当从前一个阶段复制文件时，路径被解释成相对于前一个阶段的根目录。这个问题在使用一个带<code>WORKDIR</code>的构建镜像是产生，例如<code>golang</code>镜像。如果尝试构建如下的 Dockerfile。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> golang</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> hello.go .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> go build hello.go</span></span><br><span class="line"><span class="keyword">FROM</span> ubuntu</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=0 hello .</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">"./hello"</span>]</span></span><br></pre></td></tr></table></figure>
+
+<p>会得到如下的错误。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">COPY failed: stat /var/lib/docker/overlay2/1be...868/merged/hello: no such file or directory</span><br></pre></td></tr></table></figure>
+
+<p>这是因为<code>COPY</code>命令尝试复制<code>/hello</code>，但是<code>golang</code>的<code>WORKDIR</code>是<code>/go</code>，程序实际上的路径是<code>/go/hello</code>。如果使用官方或者非常稳定的镜像来构建，使用绝对路径然后忘记相对路径可能是好的。但是如果将来构建或者运行镜像改变，建议在构建镜像中指定<code>WORKDIR</code>。这会确保文件在预期的地方，即使在构建阶段使用到的基础镜像后来改变了。依照这个原则，编译 Go 程序的 Dockerfile 文件应该看起来如下。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br><span class="line">7</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> golang</span><br><span class="line"><span class="keyword">WORKDIR</span><span class="bash"> /src</span></span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> hello.go .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> go build hello.go</span></span><br><span class="line"><span class="keyword">FROM</span> ubuntu</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=0 /src/hello .</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">"./hello"</span>]</span></span><br></pre></td></tr></table></figure>
+
+<p>如果想知道对 Golang 的多阶段构建的效率，它把镜像从 800MB 降到了 66MB。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> docker images minimage</span></span><br><span class="line">REPOSITORY     TAG                              ...    SIZE</span><br><span class="line">minimage       hello-go.golang                  ...    805MB</span><br><span class="line">minimage       hello-go.golang.ubuntu-workdir   ...    66.2MB</span><br></pre></td></tr></table></figure>
+
+<h2 id="使用FROM-scratch"><a href="#使用FROM-scratch" class="headerlink" title="使用FROM scratch"></a>使用<code>FROM scratch</code></h2><p>回到<code>Hello World</code>程序。C 版本大小是 16kB，Go 版本大小是 2MB。能得到这么小的镜像吗？能构建只包括二进制文件的镜像吗？</p>
+<p>能！所要做的全部就是使用多阶段构建，然后使用<code>scratch</code>作为运行镜像。<code>scratch</code>是个虚拟的完全空的镜像，不能被拉取或者运行。这就是为什么一个以<code>FROM scratch</code>为开始的 Dockerfile 不含预存在的成分，<code>FROM scratch</code>意味着从零开始构建。这带来了下面的<code>Dockerfile</code>。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br><span class="line">5</span><br><span class="line">6</span><br></pre></td><td class="code"><pre><span class="line"><span class="keyword">FROM</span> golang</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> hello.go .</span></span><br><span class="line"><span class="keyword">RUN</span><span class="bash"> go build hello.go</span></span><br><span class="line"><span class="keyword">FROM</span> scratch</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=0 /go/hello .</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> [<span class="string">"./hello"</span>]</span></span><br></pre></td></tr></table></figure>
+
+<p>如果构建了这个镜像，大小就确切地是二进制文件的大小并且能够运行！</p>
+<p>但是在使用<code>scratch</code>作为基础镜像时，有一些东西必须牢记于心。</p>
+<h3 id="没有-Shell"><a href="#没有-Shell" class="headerlink" title="没有 Shell"></a>没有 Shell</h3><p><code>scratch</code>镜像没有 shell。这意味着不能在<code>CMD</code>或者<code>RUN</code>中用<em>字符串语法</em>。考虑下面的 Dockerfile。</p>
+<figure class="highlight dockerfile"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line">...</span><br><span class="line"><span class="keyword">FROM</span> scratch</span><br><span class="line"><span class="keyword">COPY</span><span class="bash"> --from=0 /go/hello .</span></span><br><span class="line"><span class="keyword">CMD</span><span class="bash"> ./hello</span></span><br></pre></td></tr></table></figure>
+
+<p>如果尝试<code>docker run</code>得到的镜像，会得到下列的错误信息</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">docker: Error response from daemon: OCI runtime create failed: container_linux.go:345: starting container process caused "exec: \"/bin/sh\": stat /bin/sh: no such file or directory": unknown.</span><br></pre></td></tr></table></figure>
+
+<p>错误信息展示得不是很清楚，但是核心信息在这：<code>/bin/sh</code>从镜像里消失了。因为在<code>CMD</code>或者<code>RUN</code>中用<em>字符串语法</em>，参数被传递给<code>/bin/sh</code>。这意味着<code>CMD ./hello</code>实际上执行了<code>/bin/sh -c &quot;./hello&quot;</code>，由于在<code>scratch</code>镜像中没有<code>/bin/sh</code>，故报错了。</p>
+<p>解决方法很简单：在 Dockerfile 里使用<em>JSON 语法</em>。<code>CMD ./hello</code>变成<code>CMD [&quot;./hello&quot;]</code>。在 Docker 检测到 JSON 语法时，它会直接执行而非通过 shell。</p>
+<h3 id="没有调试工具"><a href="#没有调试工具" class="headerlink" title="没有调试工具"></a>没有调试工具</h3><p>根据定义，<code>scratch</code>是空的。它不带任何可以协助给容器除错的工具。不仅像上面说的那样没有 shell，还没有<code>ls</code>、<code>ps</code>、<code>ping</code>等等。这意味着不能进入容器（用<code>docker exec</code>或者<code>kubectl exec</code>）来调查。</p>
+<p>严格意义上，依旧有一些方法来给容器除错。<code>docker cp</code>可以把文件复制出容器；<code>docker run --net container</code>可以与网络栈交互；低阶工具<code>nsenter</code>可能非常强大。最近版本的 K8S 有暂时容器的概念，但是这依旧在 alpha 阶段。牢记这些技术肯定会使生活更复杂，尤其是已经很多该处理的。</p>
+<p>一种解决方法是用像<code>busybox</code>或者<code>alpine</code>来代替<code>scratch</code>。虽然这两者更大（<code>busybox</code>有 1.2MB 而<code>alpine</code>有 5.5MB），但是相较于动辄数百 MB 乃至上 G 巨大的整个应用的原始镜像来说，这个代价并不大。</p>
+<h3 id="没有libc"><a href="#没有libc" class="headerlink" title="没有libc"></a>没有<code>libc</code></h3><p>排除这个错误就更加看技巧。我们简单的<code>Go</code>语言写的<code>hello world</code>工作正常。但是如果尝试把<code>C</code>程序或者更复杂的比如使用了网络包的<code>Go</code>程序放到<code>scratch</code>镜像下，会得到以下的错误信息。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">standard_init_linux.go:211: exec user process caused "no such file or directory"</span><br></pre></td></tr></table></figure>
+
+<p>一些文件看上去丢失了。但是报错信息并没有说明到底是哪个文件丢失了。丢失的文件是一个程序运行必须的<em>动态库</em>。什么是<em>动态库</em>？为什么需要它？在程序编译后，它和所需的库链接了起来。（小如上面的<code>hello world</code>程序都用到了库，函数<code>puts</code>就来自于一个库。）很久之前（在上个世纪九十年代之前），程序通常使用静态链接，意味着所有使用到的库都被包含在二进制文件中。但是在一个像 Linux 一样的时分系统中，我们同时运行许多储存于硬盘的程序，这些程序几乎一直使用标准 C 库。在这种场景下，使用<em>动态链接</em>更有优势。用了动态链接，最终的二进制文件中就不需要包含所有用到的库。取而代之，包含这些库的引用，就像“这个程序需要从<code>libtrigonometry.so</code>调用函数<code>cos</code>、<code>sin</code>和<code>tan</code>。在程序执行时，系统搜寻<code>libtrigonometry.so</code>并和程序一起加载，从而程序能够调用这些函数”。</p>
+<p>动态链接有不少优势。</p>
+<ol>
+<li>它节省了硬盘空间，共同的库再也不需要被重复。</li>
+<li>它节省了内存，这些库可以从硬盘载入一次，然后在不同使用库的程序间共享。</li>
+<li>它让维护更加容易，因为当库升级时，不需要重编译所有依赖库的程序。</li>
+</ol>
+<p>仔细说来，内存节省并不是动态库导致的而是共享库。话虽如此，这两个往往是一种东西。还记得在 Linux 中，动态库文件通常以<code>.so</code>为扩展名吗？这里的<code>so</code>意为共享对象（shared object）。在 Windows 里，扩展名是<code>.dll</code>，表示动态链接库。</p>
+<p>回到主题，默认<code>C</code>程序是动态链接的。对于用了某些包的<code>Go</code>程序来说也是如此。文中这个特定的程序用到了标准 C 库，在最近的 Linux 系统中应为文件<code>libc.so.6</code>。所以要运行程序，在镜像中程序需要这个文件存在。如果使用<code>scratch</code>，这个文件明显是没有的。使用<code>busybox</code>或者<code>alpine</code>也一样，<code>busybox</code>不带标准库而<code>alpine</code>使用另一个不兼容的标准库。后面会讨论更多。</p>
+<p>如何解决这个问题呢？这里有三种选项</p>
+<h5 id="静态构建二进制文件"><a href="#静态构建二进制文件" class="headerlink" title="静态构建二进制文件"></a>静态构建二进制文件</h5><p>在编译时告诉工具链构建静态二进制文件。取决于如何构建程序，达成这个目标的方法多种多样。例如这里使用<code>gcc</code>，所有需要做的就是在命令行参数中添加<code>-static</code>开关。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line">gcc -o hello hello.c -static</span><br></pre></td></tr></table></figure>
+
+<p>最终的二进制文件从 16kB 增长到了 760kB（在作者系统上）。当然，因为嵌入了库，所以文件变大了。但是这个二进制文件就可以正确地在<code>scratch</code>镜像中运行了。</p>
+<h5 id="在镜像中添加库文件"><a href="#在镜像中添加库文件" class="headerlink" title="在镜像中添加库文件"></a>在镜像中添加库文件</h5><p>可以通过<code>ldd</code>工具来找出程序需要的库。</p>
+<figure class="highlight shell"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br><span class="line">4</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta">$</span><span class="bash"> ldd hello</span></span><br><span class="line">	linux-vdso.so.1 (0x00007ffdf8acb000)</span><br><span class="line">	libc.so.6 =&gt; /usr/lib/libc.so.6 (0x00007ff897ef6000)</span><br><span class="line">	/lib64/ld-linux-x86-64.so.2 =&gt; /usr/lib64/ld-linux-x86-64.so.2 (0x00007ff8980f7000)</span><br></pre></td></tr></table></figure>
+
+<p>可以看到程序需要的库，和系统找到的库的实际位置。</p>
+<p>在上述例子中，真正的库只有<code>libc.so.6</code>。<code>linux-vdso.so.1</code>和一个叫做 VDSO 加速系统调用的技术有关。假装它不在这。至于<code>ld-linux-x86-64.so.2</code>，这就是动态链接器本身。技术上而言，<code>hello</code>二进制文件包含了这样的信息：“嘿，这是一个动态链接程序，<code>ld-linux-x86-64.so.2</code>知道怎么把它的所有部分组合在一起”。</p>
+<p>如果想这样做的话，可以手动把<code>ldd</code>列出来的文件都加到镜像中。过程非常冗长，而且难以维护，尤其是依赖了很多库的程序。对于小小的<code>hello world</code>程序来说这种方法可行。但是对于更复杂的程序，例如一个程序用到了 DNS，就会碰到其他问题。系统中常用的 GNU C 库利用了相当复杂的叫做名称服务开关（Name Service Switch）的技术实现了 DNS 等几个功能。这个技术需要一个配置文件<code>/etc/nsswitch.conf</code>和另外的库。但是这些文件不显示在<code>ldd</code>的记录中，因为它们是在程序运行的时候再加载的。如果需要在容器中解析 DNS，依旧需要包含它们（它们的位置一般在<code>/lib64/libnss_*</code>）。</p>
+<p>笔者个人不建议这种方法，这个方法太晦涩，难以维护，将来还可能破坏。</p>
+<h5 id="使用busybox-glibc"><a href="#使用busybox-glibc" class="headerlink" title="使用busybox:glibc"></a>使用<code>busybox:glibc</code></h5><p>有个镜像设计来解决所有这种问题，叫做<code>busybox:glibc</code>。这是一个利用<code>busybox</code>来提供很多好用的除错和操作工具的小镜像（5MB）。它还包含了 GNU C 库（<code>glibc</code>）。这个镜像正好包含了之前提到的所有麻烦的文件。这是如果想在一个小镜像中运行一个用了动态库的二进制文件所需要的镜像。</p>
+<p>但是记住，如果程序用到了额外的库，这些库也需要另外复制进来。</p>
+<h2 id="归纳和（部分的）结论"><a href="#归纳和（部分的）结论" class="headerlink" title="归纳和（部分的）结论"></a>归纳和（部分的）结论</h2><p>看看对<code>C</code>写的<code>hello world</code>程序做了什么。</p>
+<blockquote>
+<p>警告：这个列表包含了之后会提到的利用 Alpine 来减少大小而得到的镜像</p>
+</blockquote>
+<ul>
+<li>原始用<code>gcc</code>编译的镜像：1.14GB</li>
+<li>利用<code>ubuntu</code>和<code>gcc</code>多阶段构建的镜像：64.2MB</li>
+<li>在<code>alpine</code>中静态 glibc 库的镜像：6.5MB</li>
+<li>在<code>alpine</code>中用动态库的镜像：5.6MB</li>
+<li>在<code>scratch</code>中用静态编译的二进制文件的镜像：940kB</li>
+<li>在<code>scratch</code>中用 musl 静态编译的二进制文件的镜像：94kB</li>
+</ul>
+<p>这是 12000 倍的大小减少，换句话说是少了 99.99%硬盘占用。不错。笔者个人而言不会使用<code>scratch</code>镜像，因为除错会很麻烦。但是如果这就是读者追求的，那它就在这。</p>
+<p>下一部分，会提到一些包括 cgo 和标记等特定于 Go 语言的内容。其他的语言也会涉及。还有会讨论更多 Alpine 的话题，因为问到这个的话，它太棒了。</p>
+
+  </div>
+</article>
+
+    <div class="blog-post-comments">
+        <div id="disqus_thread">
+            <noscript>加载评论需要在浏览器启用 JavaScript 脚本支持。</noscript>
+        </div>
+    </div>
+
+
+
+        
+          <div id="footer-post-container">
+  <div id="footer-post">
+
+    <div id="nav-footer" style="display: none">
+      <ul>
+         
+          <li><a href="/">首页</a></li>
+         
+          <li><a href="/about/">关于</a></li>
+         
+          <li><a href="/archives/">归档</a></li>
+         
+          <li><a href="https://github.com/lonelyevil" target="_blank" rel="noopener">项目</a></li>
+        
+      </ul>
+    </div>
+
+    <div id="toc-footer" style="display: none">
+      <ol class="toc"><li class="toc-item toc-level-2"><a class="toc-link" href="#简介"><span class="toc-number">1.</span> <span class="toc-text">简介</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#要解决的问题"><span class="toc-number">2.</span> <span class="toc-text">要解决的问题</span></a></li><li class="toc-item toc-level-2"><a class="toc-link" href="#多阶段构建"><span class="toc-number">3.</span> <span class="toc-text">多阶段构建</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#警告：使用经典镜像"><span class="toc-number">3.1.</span> <span class="toc-text">警告：使用经典镜像</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#警告：COPY-FROM使用绝对路径"><span class="toc-number">3.2.</span> <span class="toc-text">警告：COPY --FROM使用绝对路径</span></a></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#使用FROM-scratch"><span class="toc-number">4.</span> <span class="toc-text">使用FROM scratch</span></a><ol class="toc-child"><li class="toc-item toc-level-3"><a class="toc-link" href="#没有-Shell"><span class="toc-number">4.1.</span> <span class="toc-text">没有 Shell</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#没有调试工具"><span class="toc-number">4.2.</span> <span class="toc-text">没有调试工具</span></a></li><li class="toc-item toc-level-3"><a class="toc-link" href="#没有libc"><span class="toc-number">4.3.</span> <span class="toc-text">没有libc</span></a><ol class="toc-child"><li class="toc-item toc-level-5"><a class="toc-link" href="#静态构建二进制文件"><span class="toc-number">4.3.0.1.</span> <span class="toc-text">静态构建二进制文件</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#在镜像中添加库文件"><span class="toc-number">4.3.0.2.</span> <span class="toc-text">在镜像中添加库文件</span></a></li><li class="toc-item toc-level-5"><a class="toc-link" href="#使用busybox-glibc"><span class="toc-number">4.3.0.3.</span> <span class="toc-text">使用busybox:glibc</span></a></li></ol></li></ol></li></ol></li><li class="toc-item toc-level-2"><a class="toc-link" href="#归纳和（部分的）结论"><span class="toc-number">5.</span> <span class="toc-text">归纳和（部分的）结论</span></a></li></ol>
+    </div>
+
+    <div id="share-footer" style="display: none">
+      <ul>
+  <li><a class="icon" href="http://www.facebook.com/sharer.php?u=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/" target="_blank" rel="noopener"><i class="fab fa-facebook fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://twitter.com/share?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&text=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-twitter fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.linkedin.com/shareArticle?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-linkedin fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://pinterest.com/pin/create/bookmarklet/?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&is_video=false&description=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-pinterest fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="mailto:?subject=Docker镜像：第一部分 降低镜像大小&body=Check out this article: http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/"><i class="fas fa-envelope fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://getpocket.com/save?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-get-pocket fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://reddit.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-reddit fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.stumbleupon.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-stumbleupon fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://digg.com/submit?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&title=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-digg fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="http://www.tumblr.com/share/link?url=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&name=Docker镜像：第一部分 降低镜像大小&description=" target="_blank" rel="noopener"><i class="fab fa-tumblr fa-lg" aria-hidden="true"></i></a></li>
+  <li><a class="icon" href="https://news.ycombinator.com/submitlink?u=http://yoursite.com/2020/02/19/docker-images-part-i-reducing-image-size/&t=Docker镜像：第一部分 降低镜像大小" target="_blank" rel="noopener"><i class="fab fa-hacker-news fa-lg" aria-hidden="true"></i></a></li>
+</ul>
+
+    </div>
+
+    <div id="actions-footer">
+        <a id="menu" class="icon" href="#" onclick="$('#nav-footer').toggle();return false;"><i class="fas fa-bars fa-lg" aria-hidden="true"></i> 菜单</a>
+        <a id="toc" class="icon" href="#" onclick="$('#toc-footer').toggle();return false;"><i class="fas fa-list fa-lg" aria-hidden="true"></i> 目录</a>
+        <a id="share" class="icon" href="#" onclick="$('#share-footer').toggle();return false;"><i class="fas fa-share-alt fa-lg" aria-hidden="true"></i> 分享</a>
+        <a id="top" style="display:none" class="icon" href="#" onclick="$('html, body').animate({ scrollTop: 0 }, 'fast');"><i class="fas fa-chevron-up fa-lg" aria-hidden="true"></i> 返回顶部</a>
+    </div>
+
+  </div>
+</div>
+
+        
+        <footer id="footer">
+  <div class="footer-left">
+    Copyright &copy; 2020 Rin
+  </div>
+  <div class="footer-right">
+    <nav>
+      <ul>
+         
+          <li><a href="/">首页</a></li>
+         
+          <li><a href="/about/">关于</a></li>
+         
+          <li><a href="/archives/">归档</a></li>
+         
+          <li><a href="https://github.com/lonelyevil" target="_blank" rel="noopener">项目</a></li>
+        
+      </ul>
+    </nav>
+  </div>
+</footer>
+
+    </div>
+    <!-- styles -->
+
+<link rel="stylesheet" href="/lib/font-awesome/css/all.min.css">
+
+
+<link rel="stylesheet" href="/lib/justified-gallery/css/justifiedGallery.min.css">
+
+
+    <!-- jquery -->
+
+<script src="/lib/jquery/jquery.min.js"></script>
+
+
+<script src="/lib/justified-gallery/js/jquery.justifiedGallery.min.js"></script>
+
+<!-- clipboard -->
+
+  
+<script src="/lib/clipboard/clipboard.min.js"></script>
+
+  <script type="text/javascript">
+  $(function() {
+    // copy-btn HTML
+    var btn = "<span class=\"btn-copy tooltipped tooltipped-sw\" aria-label=\"复制到粘贴板!\">";
+    btn += '<i class="far fa-clone"></i>';
+    btn += '</span>'; 
+    // mount it!
+    $(".highlight table").before(btn);
+    var clip = new ClipboardJS('.btn-copy', {
+      text: function(trigger) {
+        return Array.from(trigger.nextElementSibling.querySelectorAll('.code')).reduce((str,it)=>str+it.innerText+'\n','')
+      }
+    });
+    clip.on('success', function(e) {
+      e.trigger.setAttribute('aria-label', "复制成功!");
+      e.clearSelection();
+    })
+  })
+  </script>
+
+
+<script src="/js/main.js"></script>
+
+<!-- search -->
+
+<!-- Google Analytics -->
+
+    <script type="text/javascript">
+        (function(i,s,o,g,r,a,m) {i['GoogleAnalyticsObject']=r;i[r]=i[r]||function() {
+        (i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+        m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+        })(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+        ga('create', 'UA-156016330-1', 'auto');
+        ga('send', 'pageview');
+    </script>
+
+<!-- Baidu Analytics -->
+
+<!-- Disqus Comments -->
+
+    <script type="text/javascript">
+        var disqus_shortname = 'evil-blog';
+
+        (function(){
+            var dsq = document.createElement('script');
+            dsq.type = 'text/javascript';
+            dsq.async = true;
+            dsq.src = '//' + disqus_shortname + '.disqus.com/embed.js';
+            (document.getElementsByTagName('head')[0] || document.getElementsByTagName('body')[0]).appendChild(dsq);
+        }());
+    </script>
+
+
+</body>
+</html>
